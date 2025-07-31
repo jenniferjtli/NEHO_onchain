@@ -1,0 +1,33 @@
+# Foundry build artifacts
+out/
+cache/
+cache_hardhat/
+
+# Dependencies
+lib/
+node_modules/
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Coverage reports
+coverage/
+lcov.info
+
+# Broadcast logs
+broadcast/
+
+# Gas reports
+gas-report.txt
