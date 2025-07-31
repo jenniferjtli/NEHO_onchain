@@ -156,6 +156,42 @@ contract Roulette {
         _placeBet(BetType.High, 0, amount);
     }
 
+    /// @notice Place a bet on first dozen (1-12)
+    function betDozen1(uint256 amount) external {
+        if (!gameActive) revert GameNotActive();
+        _placeBet(BetType.Dozen1, 0, amount);
+    }
+
+    /// @notice Place a bet on second dozen (13-24)
+    function betDozen2(uint256 amount) external {
+        if (!gameActive) revert GameNotActive();
+        _placeBet(BetType.Dozen2, 0, amount);
+    }
+
+    /// @notice Place a bet on third dozen (25-36)
+    function betDozen3(uint256 amount) external {
+        if (!gameActive) revert GameNotActive();
+        _placeBet(BetType.Dozen3, 0, amount);
+    }
+
+    /// @notice Place a bet on first column (1,4,7,10,13,16,19,22,25,28,31,34)
+    function betColumn1(uint256 amount) external {
+        if (!gameActive) revert GameNotActive();
+        _placeBet(BetType.Column1, 0, amount);
+    }
+
+    /// @notice Place a bet on second column (2,5,8,11,14,17,20,23,26,29,32,35)
+    function betColumn2(uint256 amount) external {
+        if (!gameActive) revert GameNotActive();
+        _placeBet(BetType.Column2, 0, amount);
+    }
+
+    /// @notice Place a bet on third column (3,6,9,12,15,18,21,24,27,30,33,36)
+    function betColumn3(uint256 amount) external {
+        if (!gameActive) revert GameNotActive();
+        _placeBet(BetType.Column3, 0, amount);
+    }
+
     /// @notice Spin the wheel and settle bets
     function spin() external onlyOwner {
         if (!gameActive) revert GameNotActive();
@@ -256,6 +292,30 @@ contract Roulette {
         } else if (bet.betType == BetType.High && winningNumber >= 19 && winningNumber <= 36) {
             wins = true;
             multiplier = 1; // 1:1
+        }
+        else if (bet.betType == BetType.Dozen1 && winningNumber >= 1 && winningNumber <= 12) {
+            wins = true;
+            multiplier = 2; //2:1
+        }
+        else if (bet.betType == BetType.Dozen2 && winningNumber >= 13 && winningNumber <= 24) {
+            wins = true;
+            multiplier = 2; //2:1
+        }
+        else if (bet.betType == BetType.Dozen3 && winningNumber >= 25 && winningNumber <= 36) {
+            wins = true;
+            multiplier = 2; //2:1
+        }
+        else if (bet.betType == BetType.Column1 && winningNumber != 0 && winningNumber % 3 == 1) {
+            wins = true;
+            multiplier = 2; // 2:1
+        }
+        else if (bet.betType == BetType.Column2 && winningNumber != 0 && winningNumber % 3 == 2) {
+            wins = true;
+            multiplier = 2; // 2:1
+        }
+        else if (bet.betType == BetType.Column3 && winningNumber != 0 && winningNumber % 3 == 0) {
+            wins = true;
+            multiplier = 2; // 2:1
         }
         
         if (wins) {
