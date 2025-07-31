@@ -38,7 +38,7 @@ contract Roulette {
     address public owner;
     uint256 public houseEdge = 275; // 2.75% (275 basis points)
     uint256 public constant BASIS_POINTS = 10000;
-    uint256 public minBet = 0.001 ether;
+    uint256 public minBet = 0.00001 ether;
     uint256 public maxBet = 1 ether;
     
     uint256 public currentGameId;
