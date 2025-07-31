@@ -15,7 +15,7 @@ contract RouletteTest is Test {
         player1 = address(0x123);
         player2 = address(0x456);
         
-        roulette = new Roulette();
+        roulette = new Roulette(address(0), bytes32(0), 0);
         
         // Give test addresses some ETH
         vm.deal(player1, 10 ether);

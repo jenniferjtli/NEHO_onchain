@@ -14,8 +14,13 @@ contract Deploy is Script {
     function run() public {
         vm.startBroadcast();
         
+        // Dummy parameters for VRF; replace with real values when deploying live
+        address vrfCoordinator = address(0);
+        bytes32 keyHash = bytes32(0);
+        uint64 subId = 0;
+
         // Deploy Roulette contract
-        Roulette roulette = new Roulette();
+        Roulette roulette = new Roulette(vrfCoordinator, keyHash, subId);
         
         console.log("Roulette contract deployed at:", address(roulette));
         console.log("Owner:", roulette.owner());
