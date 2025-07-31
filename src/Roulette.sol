@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
+import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
+import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+
 /// @notice A decentralized roulette game contract
-contract Roulette {
+contract Roulette is VRFConsumerBaseV2, ReentrancyGuard {
     // Bet types
     enum BetType {
         Number,     // Single number (0-36)
@@ -40,6 +44,17 @@ contract Roulette {
     uint256 public constant BASIS_POINTS = 10000;
     uint256 public minBet = 0.00001 ether;
     uint256 public maxBet = 1 ether;
+    // House bankroll to cover payouts and ensure solvency
+    uint256 public houseBankroll;
+
+    /* ========== CHAINLINK VRF CONFIG ========== */
+    VRFCoordinatorV2Interface private immutable COORDINATOR;
+    bytes32 private immutable keyHash;
+    uint64 private immutable subscriptionId;
+    uint16 private constant REQUEST_CONFIRMATIONS = 3;
+    uint32 private constant CALLBACK_GAS_LIMIT = 200000;
+    uint32 private constant NUM_WORDS = 1;
+    mapping(uint256 /* requestId */ => uint256 /* gameId */) private requestIdToGameId;
     
     uint256 public currentGameId;
     bool public gameActive;
@@ -71,8 +86,13 @@ contract Roulette {
     error NoActiveBets();
     error BetsAlreadySettled();
 
-    constructor() {
+    constructor(address _vrfCoordinator, bytes32 _keyHash, uint64 _subscriptionId) VRFConsumerBaseV2(_vrfCoordinator) {
         owner = msg.sender;
+
+        // Chainlink VRF setup
+        COORDINATOR = VRFCoordinatorV2Interface(_vrfCoordinator);
+        keyHash = _keyHash;
+        subscriptionId = _subscriptionId;
         
         // Initialize red numbers (European roulette)
         uint256[18] memory redNumbers = [uint256(1), 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
@@ -93,7 +113,7 @@ contract Roulette {
     }
 
     /// @notice Withdraw funds from balance
-    function withdraw(uint256 amount) external {
+    function withdraw(uint256 amount) external nonReentrant {
         if (playerBalances[msg.sender] < amount) revert InsufficientBalance();
         
         playerBalances[msg.sender] -= amount;
@@ -192,20 +212,37 @@ contract Roulette {
         _placeBet(BetType.Column3, 0, amount);
     }
 
-    /// @notice Spin the wheel and settle bets
-    function spin() external onlyOwner {
+    /// @notice Request randomness for the spin using Chainlink VRF. Result is handled in fulfillRandomWords.
+    function spin() external onlyOwner returns (uint256 requestId) {
         if (!gameActive) revert GameNotActive();
         if (gameBets[currentGameId].length == 0) revert NoActiveBets();
-        
-        // Generate random number (0-36)
-        uint256 winningNumber = _generateRandomNumber();
+
+        // Lock further betting until randomness arrives
+        gameActive = false;
+
+        requestId = COORDINATOR.requestRandomWords(
+            keyHash,
+            subscriptionId,
+            REQUEST_CONFIRMATIONS,
+            CALLBACK_GAS_LIMIT,
+            NUM_WORDS
+        );
+
+        requestIdToGameId[requestId] = currentGameId;
+    }
+
+    /// @notice Callback executed by Chainlink VRF with the random words.
+    function fulfillRandomWords(uint256 requestId, uint256[] memory randomWords) internal override {
+        uint256 gameId = requestIdToGameId[requestId];
+
+        uint256 winningNumber = randomWords[0] % 37;
         bool isRed = isRedNumber[winningNumber];
-        
-        // Settle all bets
+
+        // Settle bets and update bankroll
         uint256 totalPayout = _settleBets(winningNumber, isRed);
-        
-        // Store result
-        gameResults[currentGameId] = GameResult({
+
+        // Store game result
+        gameResults[gameId] = GameResult({
             winningNumber: winningNumber,
             isRed: isRed,
             timestamp: block.timestamp,
@@ -224,6 +261,8 @@ contract Roulette {
         if (playerBalances[msg.sender] < amount) revert InsufficientBalance();
         
         playerBalances[msg.sender] -= amount;
+        // Stake becomes part of the house bankroll until game settles
+        houseBankroll += amount;
         
         gameBets[currentGameId].push(Bet({
             player: msg.sender,
@@ -257,6 +296,8 @@ contract Roulette {
             uint256 payout = _calculatePayout(bet, winningNumber, isRed);
             
             if (payout > 0) {
+                require(houseBankroll >= payout, "InsufficientBankroll");
+                houseBankroll -= payout;
                 playerBalances[bet.player] += payout;
                 totalPayout += payout;
                 emit Payout(bet.player, payout);
@@ -344,6 +385,8 @@ contract Roulette {
 
     /// @notice Withdraw house funds (only owner)
     function withdrawHouseFunds(uint256 amount) external onlyOwner {
+        require(houseBankroll >= amount, "InsufficientBankroll");
+        houseBankroll -= amount;
         payable(owner).transfer(amount);
     }
 
