@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
-import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @notice A decentralized roulette game contract
-contract Roulette is VRFConsumerBaseV2, ReentrancyGuard {
+contract Roulette is ReentrancyGuard {
     // Bet types
     enum BetType {
         Number,     // Single number (0-36)
@@ -47,14 +45,10 @@ contract Roulette is VRFConsumerBaseV2, ReentrancyGuard {
     // House bankroll to cover payouts and ensure solvency
     uint256 public houseBankroll;
 
-    /* ========== CHAINLINK VRF CONFIG ========== */
-    VRFCoordinatorV2Interface private immutable COORDINATOR;
-    bytes32 private immutable keyHash;
-    uint64 private immutable subscriptionId;
-    uint16 private constant REQUEST_CONFIRMATIONS = 3;
-    uint32 private constant CALLBACK_GAS_LIMIT = 200000;
-    uint32 private constant NUM_WORDS = 1;
-    mapping(uint256 /* requestId */ => uint256 /* gameId */) private requestIdToGameId;
+    /* ========== COMMIT-REVEAL RANDOMNESS ========== */
+    bytes32 public seedCommit;
+    uint256 public commitBlock;
+    bool public seedRevealed;
     
     uint256 public currentGameId;
     bool public gameActive;
@@ -74,6 +68,8 @@ contract Roulette is VRFConsumerBaseV2, ReentrancyGuard {
     event GameStarted(uint256 indexed gameId);
     event FundsDeposited(address indexed player, uint256 amount);
     event FundsWithdrawn(address indexed player, uint256 amount);
+    event SeedCommitted(uint256 indexed gameId, bytes32 commitment, uint256 blockNumber);
+    event SeedRevealed(uint256 indexed gameId, uint256 seed, uint256 winningNumber);
 
     // Errors
     error NotOwner();
@@ -85,14 +81,13 @@ contract Roulette is VRFConsumerBaseV2, ReentrancyGuard {
     error InvalidNumber();
     error NoActiveBets();
     error BetsAlreadySettled();
+    error SeedNotCommitted();
+    error SeedAlreadyRevealed();
+    error InvalidSeed();
 
-    constructor(address _vrfCoordinator, bytes32 _keyHash, uint64 _subscriptionId) VRFConsumerBaseV2(_vrfCoordinator) {
+    constructor() payable {
         owner = msg.sender;
-
-        // Chainlink VRF setup
-        COORDINATOR = VRFCoordinatorV2Interface(_vrfCoordinator);
-        keyHash = _keyHash;
-        subscriptionId = _subscriptionId;
+        houseBankroll = msg.value; // Initial house funding
         
         // Initialize red numbers (European roulette)
         uint256[18] memory redNumbers = [uint256(1), 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
@@ -104,6 +99,12 @@ contract Roulette is VRFConsumerBaseV2, ReentrancyGuard {
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
         _;
+    }
+
+    /// @notice Owner funds the house bankroll
+    function fundHouse() external payable onlyOwner {
+        houseBankroll += msg.value;
+        emit FundsDeposited(msg.sender, msg.value);
     }
 
     /// @notice Deposit funds to play
@@ -128,6 +129,7 @@ contract Roulette is VRFConsumerBaseV2, ReentrancyGuard {
         
         gameActive = true;
         currentGameId++;
+        seedRevealed = false;
         
         emit GameStarted(currentGameId);
     }
@@ -212,45 +214,46 @@ contract Roulette is VRFConsumerBaseV2, ReentrancyGuard {
         _placeBet(BetType.Column3, 0, amount);
     }
 
-    /// @notice Request randomness for the spin using Chainlink VRF. Result is handled in fulfillRandomWords.
-    function spin() external onlyOwner returns (uint256 requestId) {
+    /// @notice Commit a seed for the current game
+    function commitSeed(bytes32 commitment) external onlyOwner {
         if (!gameActive) revert GameNotActive();
         if (gameBets[currentGameId].length == 0) revert NoActiveBets();
-
-        // Lock further betting until randomness arrives
-        gameActive = false;
-
-        requestId = COORDINATOR.requestRandomWords(
-            keyHash,
-            subscriptionId,
-            REQUEST_CONFIRMATIONS,
-            CALLBACK_GAS_LIMIT,
-            NUM_WORDS
-        );
-
-        requestIdToGameId[requestId] = currentGameId;
+        if (seedRevealed) revert SeedAlreadyRevealed();
+        
+        commitBlock = block.number;
+        seedCommit = commitment;
+        gameActive = false; // Lock betting after commit
+        
+        emit SeedCommitted(currentGameId, commitment, block.number);
     }
 
-    /// @notice Callback executed by Chainlink VRF with the random words.
-    function fulfillRandomWords(uint256 requestId, uint256[] memory randomWords) internal override {
-        uint256 gameId = requestIdToGameId[requestId];
+    /// @notice Reveal the seed and spin the roulette wheel
+    function revealSeed(uint256 seed) external onlyOwner {
+        if (seedCommit == bytes32(0)) revert SeedNotCommitted();
+        if (seedRevealed) revert SeedAlreadyRevealed();
+        if (keccak256(abi.encodePacked(seed)) != seedCommit) revert InvalidSeed();
 
-        uint256 winningNumber = randomWords[0] % 37;
+        // Combine seed with block hash for extra randomness
+        uint256 combinedSeed = uint256(keccak256(abi.encodePacked(seed, blockhash(commitBlock))));
+        uint256 winningNumber = combinedSeed % 37;
         bool isRed = isRedNumber[winningNumber];
 
         // Settle bets and update bankroll
         uint256 totalPayout = _settleBets(winningNumber, isRed);
 
         // Store game result
-        gameResults[gameId] = GameResult({
+        gameResults[currentGameId] = GameResult({
             winningNumber: winningNumber,
             isRed: isRed,
             timestamp: block.timestamp,
             totalPayout: totalPayout
         });
         
-        gameActive = false;
+        // Reset for next game
+        seedCommit = bytes32(0);
+        commitBlock = 0;
         
+        emit SeedRevealed(currentGameId, seed, winningNumber);
         emit GameSpun(currentGameId, winningNumber, isRed, totalPayout);
     }
 
@@ -279,7 +282,7 @@ contract Roulette is VRFConsumerBaseV2, ReentrancyGuard {
     function _generateRandomNumber() internal view returns (uint256) {
         return uint256(keccak256(abi.encodePacked(
             block.timestamp,
-            block.difficulty,
+            block.prevrandao,
             msg.sender,
             currentGameId
         ))) % 37;

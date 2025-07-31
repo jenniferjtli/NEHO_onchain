@@ -15,7 +15,7 @@ contract RouletteTest is Test {
         player1 = address(0x123);
         player2 = address(0x456);
         
-        roulette = new Roulette(address(0), bytes32(0), 0);
+        roulette = new Roulette();
         
         // Give test addresses some ETH
         vm.deal(player1, 10 ether);
@@ -140,7 +140,7 @@ contract RouletteTest is Test {
         roulette.startGame();
         
         vm.expectRevert();
-        roulette.spin();
+        roulette.commitSeed(keccak256(abi.encodePacked(uint256(12345))));
     }
 
     function test_spin_onlyOwner() public {
@@ -154,7 +154,7 @@ contract RouletteTest is Test {
         
         vm.prank(player1);
         vm.expectRevert();
-        roulette.spin();
+        roulette.commitSeed(keccak256(abi.encodePacked(uint256(12345))));
     }
 
     function test_fullGameFlow() public {
@@ -174,8 +174,10 @@ contract RouletteTest is Test {
         vm.prank(player2);
         roulette.betNumber(7, 0.1 ether);
         
-        // Spin (owner only)
-        roulette.spin();
+        // Commit and reveal (owner only)
+        uint256 secretSeed = 12345;
+        roulette.commitSeed(keccak256(abi.encodePacked(secretSeed)));
+        roulette.revealSeed(secretSeed);
         
         // Game should be inactive after spin
         assertFalse(roulette.gameActive());
