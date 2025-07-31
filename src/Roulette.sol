@@ -259,7 +259,9 @@ contract Roulette {
         }
         
         if (wins) {
-            return bet.amount + (bet.amount * multiplier);
+            uint256 payoutBeforeEdge = bet.amount * multiplier;   // gross winnings
+            uint256 rake = payoutBeforeEdge * houseEdge / BASIS_POINTS;  // house’s cut
+            return bet.amount + payoutBeforeEdge - rake;          // net payout to player
         }
         
         return 0;
