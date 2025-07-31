@@ -54,7 +54,7 @@ contract Roulette {
     
     // Events
     event BetPlaced(uint256 indexed gameId, address indexed player, BetType betType, uint256 number, uint256 amount);
-    event GameResult(uint256 indexed gameId, uint256 winningNumber, bool isRed, uint256 totalPayout);
+    event GameSpun(uint256 indexed gameId, uint256 winningNumber, bool isRed, uint256 totalPayout);
     event Payout(address indexed player, uint256 amount);
     event GameStarted(uint256 indexed gameId);
     event FundsDeposited(address indexed player, uint256 amount);
@@ -75,7 +75,7 @@ contract Roulette {
         owner = msg.sender;
         
         // Initialize red numbers (European roulette)
-        uint256[18] memory redNumbers = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
+        uint256[18] memory redNumbers = [uint256(1), 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
         for (uint256 i = 0; i < redNumbers.length; i++) {
             isRedNumber[redNumbers[i]] = true;
         }
@@ -214,7 +214,7 @@ contract Roulette {
         
         gameActive = false;
         
-        emit GameResult(currentGameId, winningNumber, isRed, totalPayout);
+        emit GameSpun(currentGameId, winningNumber, isRed, totalPayout);
     }
 
     /// @notice Internal function to place a bet
@@ -305,11 +305,11 @@ contract Roulette {
             wins = true;
             multiplier = 2; //2:1
         }
-        else if (bet.betType == BetType.Column1 && winningNumber != 0 && winningNumber % 3 == 1) {
+        else if (bet.betType == BetType.Column1 && winningNumber != 0 && (winningNumber - 1) % 3 == 0) {
             wins = true;
             multiplier = 2; // 2:1
         }
-        else if (bet.betType == BetType.Column2 && winningNumber != 0 && winningNumber % 3 == 2) {
+        else if (bet.betType == BetType.Column2 && winningNumber != 0 && (winningNumber - 2) % 3 == 0) {
             wins = true;
             multiplier = 2; // 2:1
         }
@@ -319,9 +319,8 @@ contract Roulette {
         }
         
         if (wins) {
-            uint256 payoutBeforeEdge = bet.amount * multiplier;   // gross winnings
-            uint256 rake = payoutBeforeEdge * houseEdge / BASIS_POINTS;  // house’s cut
-            return bet.amount + payoutBeforeEdge - rake;          // net payout to player
+            // Return bet amount + winnings (standard roulette payout)
+            return bet.amount + (bet.amount * multiplier);
         }
         
         return 0;

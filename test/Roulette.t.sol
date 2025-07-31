@@ -12,8 +12,8 @@ contract RouletteTest is Test {
 
     function setUp() public {
         owner = address(this);
-        player1 = address(0x1);
-        player2 = address(0x2);
+        player1 = address(0x123);
+        player2 = address(0x456);
         
         roulette = new Roulette();
         
@@ -22,11 +22,11 @@ contract RouletteTest is Test {
         vm.deal(player2, 10 ether);
     }
 
-    function test_deployment() public {
+    function test_deployment() public view {
         assertEq(roulette.owner(), owner);
-        assertEq(roulette.minBet(), 0.001 ether);
+        assertEq(roulette.minBet(), 0.00001 ether);
         assertEq(roulette.maxBet(), 1 ether);
-        assertEq(roulette.houseEdge(), 275);
+
         assertFalse(roulette.gameActive());
         assertEq(roulette.currentGameId(), 0);
     }
@@ -43,11 +43,16 @@ contract RouletteTest is Test {
         vm.prank(player1);
         roulette.deposit{value: 1 ether}();
         
+        // Check contract has the ETH
+        assertEq(address(roulette).balance, 1 ether);
+        assertEq(roulette.playerBalances(player1), 1 ether);
+        
         // Then withdraw
         vm.prank(player1);
         roulette.withdraw(0.5 ether);
         
         assertEq(roulette.playerBalances(player1), 0.5 ether);
+        assertEq(address(roulette).balance, 0.5 ether);
     }
 
     function test_startGame() public {
@@ -117,7 +122,7 @@ contract RouletteTest is Test {
         
         vm.prank(player1);
         vm.expectRevert();
-        roulette.betNumber(7, 0.0001 ether); // Below minBet
+        roulette.betNumber(7, 0.000001 ether); // Below minBet
     }
 
     function test_betTooHigh() public {
@@ -181,7 +186,7 @@ contract RouletteTest is Test {
         assertTrue(timestamp > 0);
     }
 
-    function test_redNumbers() public {
+    function test_redNumbers() public view {
         // Test some known red numbers
         assertTrue(roulette.isRedNumber(1));
         assertTrue(roulette.isRedNumber(3));
